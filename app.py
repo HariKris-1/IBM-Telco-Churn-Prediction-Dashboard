@@ -201,7 +201,162 @@ with tab_sql:
     )
     st.plotly_chart(fig_cum, width="stretch")
 
+    # ── Advanced SQL Analysis ──────────────────────────────────────────
+    st.divider()
+    st.subheader("🚀 Advanced SQL Analysis")
+
+    # 1. Customer Segmentation by Tenure
+    st.subheader("1. Customer Segmentation")
+    q4_sql = """
+    SELECT 
+        CASE 
+            WHEN tenure <= 12 THEN 'New Customers (<= 1 Year)'
+            WHEN tenure <= 36 THEN 'Regular Customers (1-3 Years)'
+            ELSE 'Loyal Customers (> 3 Years)'
+        END AS Segment,
+        COUNT(*) AS CustomerCount,
+        ROUND(AVG(MonthlyCharges), 2) AS AvgMonthlyCharges,
+        ROUND(AVG(Churn_binary) * 100, 2) AS ChurnRate
+    FROM customers
+    GROUP BY Segment
+    ORDER BY MIN(tenure);
+    """
+    st.code(q4_sql, language="sql")
+    st.dataframe(run_sql(q4_sql), width="stretch")
+    st.info("💡 **Insight:** New customers have significantly higher churn rates compared to loyal customers. As tenure increases, churn rate dramatically drops, highlighting the importance of early retention strategies.")
+
+    # 2. Revenue Analysis by Contract Type
+    st.subheader("2. Revenue Analysis by Contract Type")
+    q5_sql = """
+    SELECT 
+        Contract,
+        COUNT(*) AS TotalCustomers,
+        ROUND(SUM(TotalCharges), 2) AS TotalRevenue,
+        ROUND(AVG(TotalCharges), 2) AS AverageRevenue,
+        ROUND(AVG(Churn_binary) * 100, 2) AS ChurnRate
+    FROM customers
+    GROUP BY Contract
+    ORDER BY TotalRevenue DESC;
+    """
+    st.code(q5_sql, language="sql")
+    st.dataframe(run_sql(q5_sql), width="stretch")
+    st.info("💡 **Insight:** Two-year contracts generate the most total revenue and have the lowest churn rate. Month-to-month contracts have high customer volume but suffer from high churn and lower average revenue per user.")
+
+    # 3. Churn by Payment Method
+    st.subheader("3. Churn by Payment Method")
+    q6_sql = """
+    SELECT 
+        PaymentMethod,
+        COUNT(*) AS TotalCustomers,
+        ROUND(AVG(Churn_binary) * 100, 2) AS ChurnRate
+    FROM customers
+    GROUP BY PaymentMethod
+    ORDER BY ChurnRate DESC;
+    """
+    st.code(q6_sql, language="sql")
+    st.dataframe(run_sql(q6_sql), width="stretch")
+    st.info("💡 **Insight:** Customers paying via Electronic Check churn at an alarmingly higher rate (over 45%) compared to other automated or mailed methods.")
+
+    # 4. Highest Revenue Customers (Top 10)
+    st.subheader("4. Highest Revenue Customers")
+    q7_sql = """
+    SELECT 
+        customerID,
+        Contract,
+        tenure,
+        ROUND(MonthlyCharges, 2) AS MonthlyCharges,
+        ROUND(TotalCharges, 2) AS TotalCharges
+    FROM customers
+    ORDER BY TotalCharges DESC
+    LIMIT 10;
+    """
+    st.code(q7_sql, language="sql")
+    st.dataframe(run_sql(q7_sql), width="stretch")
+    st.info("💡 **Insight:** The top 10 customers by revenue mostly have long tenures (71-72 months) and high monthly charges, primarily on Two-year or One-year contracts.")
+
+    # 5. CASE WHEN Analysis (Charges vs Churn)
+    st.subheader("5. CASE WHEN Analysis")
+    q8_sql = """
+    SELECT 
+        CASE 
+            WHEN MonthlyCharges < 40 THEN 'Low Charges (< $40)'
+            WHEN MonthlyCharges < 80 THEN 'Medium Charges ($40 - $80)'
+            ELSE 'High Charges (>= $80)'
+        END AS ChargeLevel,
+        COUNT(*) AS CustomerCount,
+        ROUND(AVG(Churn_binary) * 100, 2) AS AverageChurnRate
+    FROM customers
+    GROUP BY ChargeLevel
+    ORDER BY MIN(MonthlyCharges);
+    """
+    st.code(q8_sql, language="sql")
+    st.dataframe(run_sql(q8_sql), width="stretch")
+    st.info("💡 **Insight:** Customers with higher monthly bills (>= $80) experience higher average churn rates (~34%) compared to customers with lower monthly bills (< $40).")
+
+    # 6. CTE Analysis (Contract Revenue vs Overall Average)
+    st.subheader("6. CTE Analysis")
+    q9_sql = """
+    WITH ContractAvg AS (
+        SELECT 
+            Contract,
+            ROUND(AVG(TotalCharges), 2) AS AvgContractRevenue
+        FROM customers
+        GROUP BY Contract
+    ),
+    OverallAvg AS (
+        SELECT ROUND(AVG(TotalCharges), 2) AS OverallAvgRevenue
+        FROM customers
+    )
+    SELECT 
+        c.Contract,
+        c.AvgContractRevenue,
+        o.OverallAvgRevenue,
+        ROUND(c.AvgContractRevenue - o.OverallAvgRevenue, 2) AS DifferenceFromOverall
+    FROM ContractAvg c, OverallAvg o
+    ORDER BY c.AvgContractRevenue DESC;
+    """
+    st.code(q9_sql, language="sql")
+    st.dataframe(run_sql(q9_sql), width="stretch")
+    st.info("💡 **Insight:** Month-to-month contracts bring in far less total lifetime revenue compared to the overall average, whereas one and two-year contracts exceed the average substantially.")
+
+    # 7. Window Function (Top 20 Ranked)
+    st.subheader("7. Window Function")
+    q10_sql = """
+    SELECT 
+        customerID,
+        TotalCharges,
+        RANK() OVER(ORDER BY TotalCharges DESC) AS Rank,
+        ROW_NUMBER() OVER(ORDER BY TotalCharges DESC) AS RowNumber
+    FROM customers
+    WHERE TotalCharges IS NOT NULL
+    LIMIT 20;
+    """
+    st.code(q10_sql, language="sql")
+    st.dataframe(run_sql(q10_sql), width="stretch")
+    st.info("💡 **Insight:** Utilizing RANK and ROW_NUMBER allows us to assign proper leaderboard positions for the absolute highest revenue drivers.")
+
+    # 8. DENSE_RANK (Payment Methods by Churn)
+    st.subheader("8. DENSE_RANK")
+    q11_sql = """
+    WITH PaymentChurn AS (
+        SELECT 
+            PaymentMethod,
+            ROUND(AVG(Churn_binary) * 100, 2) AS ChurnRate
+        FROM customers
+        GROUP BY PaymentMethod
+    )
+    SELECT 
+        PaymentMethod,
+        ChurnRate,
+        DENSE_RANK() OVER(ORDER BY ChurnRate DESC) AS Rank
+    FROM PaymentChurn;
+    """
+    st.code(q11_sql, language="sql")
+    st.dataframe(run_sql(q11_sql), width="stretch")
+    st.info("💡 **Insight:** DENSE_RANK clearly establishes 'Electronic check' as the definitive highest-churn category (Rank 1).")
+
 # =====================================================================
+
 # TAB 3 — Hypothesis Tests
 # =====================================================================
 with tab_hyp:
