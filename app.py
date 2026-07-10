@@ -10,7 +10,16 @@ import streamlit as st
 from scipy.stats import chi2_contingency, ttest_ind
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
+)
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from statsmodels.stats.power import NormalIndPower
@@ -296,12 +305,12 @@ with tab_ab:
     )
 
 # =====================================================================
-# TAB 5 — Churn Model
+# TAB 5 — Churn Model (Enhanced Evaluation)
 # =====================================================================
 with tab_ml:
     st.header("Churn Prediction Models")
 
-    # Prepare features
+    # ── Prepare features (unchanged) ───────────────────────────────────
     drop_cols = ["customerID", "Churn", "Churn_binary"]
     feature_df = df.drop(columns=drop_cols)
     feature_df = pd.get_dummies(feature_df, drop_first=True)
@@ -312,28 +321,162 @@ with tab_ml:
         X, y, test_size=0.20, random_state=42
     )
 
-    # Logistic Regression (scaled)
+    # ── Logistic Regression (scaled) — unchanged ───────────────────────
     scaler = StandardScaler()
     X_train_sc = scaler.fit_transform(X_train)
     X_test_sc = scaler.transform(X_test)
 
     lr = LogisticRegression(max_iter=1000, random_state=42)
     lr.fit(X_train_sc, y_train)
+    lr_preds = lr.predict(X_test_sc)
     lr_proba = lr.predict_proba(X_test_sc)[:, 1]
-    lr_auc = roc_auc_score(y_test, lr_proba)
 
-    # Random Forest
+    # ── Random Forest — unchanged ──────────────────────────────────────
     rf = RandomForestClassifier(n_estimators=200, random_state=42)
     rf.fit(X_train, y_train)
+    rf_preds = rf.predict(X_test)
     rf_proba = rf.predict_proba(X_test)[:, 1]
-    rf_auc = roc_auc_score(y_test, rf_proba)
 
-    st.subheader("ROC-AUC Scores")
-    col1, col2 = st.columns(2)
-    col1.metric("Logistic Regression", f"{lr_auc:.4f}")
-    col2.metric("Random Forest", f"{rf_auc:.4f}")
+    # ── 1. Metrics Comparison Table ────────────────────────────────────
+    st.subheader("📋 Model Comparison Table")
 
-    # Feature importances
+    def compute_metrics(y_true, y_pred, y_prob):
+        """Compute all classification metrics for a model."""
+        return {
+            "Accuracy": accuracy_score(y_true, y_pred),
+            "Precision": precision_score(y_true, y_pred),
+            "Recall": recall_score(y_true, y_pred),
+            "F1 Score": f1_score(y_true, y_pred),
+            "ROC-AUC": roc_auc_score(y_true, y_prob),
+        }
+
+    lr_metrics = compute_metrics(y_test, lr_preds, lr_proba)
+    rf_metrics = compute_metrics(y_test, rf_preds, rf_proba)
+
+    metrics_df = pd.DataFrame(
+        {"Logistic Regression": lr_metrics, "Random Forest": rf_metrics}
+    ).T
+    # Format as percentages for display
+    metrics_display = metrics_df.style.format("{:.4f}").highlight_max(
+        axis=0, props="color: white; background-color: #2ecc71; font-weight: bold;"
+    )
+    st.dataframe(metrics_display, width="stretch")
+
+    # Metric cards row
+    st.markdown("**Best Model per Metric:**")
+    metric_cols = st.columns(5)
+    for i, metric in enumerate(["Accuracy", "Precision", "Recall", "F1 Score", "ROC-AUC"]):
+        best = "LR" if lr_metrics[metric] >= rf_metrics[metric] else "RF"
+        best_val = max(lr_metrics[metric], rf_metrics[metric])
+        metric_cols[i].metric(metric, f"{best_val:.4f}", delta=best)
+
+    st.divider()
+
+    # ── 2. Confusion Matrices ──────────────────────────────────────────
+    st.subheader("🔢 Confusion Matrices")
+
+    cm_col1, cm_col2 = st.columns(2)
+
+    # Logistic Regression confusion matrix
+    lr_cm = confusion_matrix(y_test, lr_preds)
+    with cm_col1:
+        st.markdown("**Logistic Regression**")
+        fig_lr_cm = px.imshow(
+            lr_cm,
+            text_auto=True,
+            labels=dict(x="Predicted", y="Actual", color="Count"),
+            x=["Not Churned", "Churned"],
+            y=["Not Churned", "Churned"],
+            color_continuous_scale="Blues",
+            aspect="equal",
+        )
+        fig_lr_cm.update_layout(height=350, margin=dict(t=30, b=30))
+        st.plotly_chart(fig_lr_cm, width="stretch")
+
+    # Random Forest confusion matrix
+    rf_cm = confusion_matrix(y_test, rf_preds)
+    with cm_col2:
+        st.markdown("**Random Forest**")
+        fig_rf_cm = px.imshow(
+            rf_cm,
+            text_auto=True,
+            labels=dict(x="Predicted", y="Actual", color="Count"),
+            x=["Not Churned", "Churned"],
+            y=["Not Churned", "Churned"],
+            color_continuous_scale="Oranges",
+            aspect="equal",
+        )
+        fig_rf_cm.update_layout(height=350, margin=dict(t=30, b=30))
+        st.plotly_chart(fig_rf_cm, width="stretch")
+
+    st.divider()
+
+    # ── 3. ROC Curves ──────────────────────────────────────────────────
+    st.subheader("📈 ROC Curves")
+
+    lr_fpr, lr_tpr, _ = roc_curve(y_test, lr_proba)
+    rf_fpr, rf_tpr, _ = roc_curve(y_test, rf_proba)
+
+    fig_roc = go.Figure()
+    fig_roc.add_trace(go.Scatter(
+        x=lr_fpr, y=lr_tpr, mode="lines",
+        name=f"Logistic Regression (AUC = {lr_metrics['ROC-AUC']:.4f})",
+        line=dict(color="#636EFA", width=2),
+    ))
+    fig_roc.add_trace(go.Scatter(
+        x=rf_fpr, y=rf_tpr, mode="lines",
+        name=f"Random Forest (AUC = {rf_metrics['ROC-AUC']:.4f})",
+        line=dict(color="#EF553B", width=2),
+    ))
+    # Diagonal reference line
+    fig_roc.add_trace(go.Scatter(
+        x=[0, 1], y=[0, 1], mode="lines",
+        name="Random Classifier",
+        line=dict(color="gray", width=1, dash="dash"),
+    ))
+    fig_roc.update_layout(
+        xaxis_title="False Positive Rate",
+        yaxis_title="True Positive Rate",
+        legend=dict(x=0.4, y=0.05),
+        height=450,
+    )
+    st.plotly_chart(fig_roc, width="stretch")
+
+    st.divider()
+
+    # ── 4. Classification Reports ──────────────────────────────────────
+    st.subheader("📄 Classification Reports")
+
+    report_col1, report_col2 = st.columns(2)
+    with report_col1:
+        st.markdown("**Logistic Regression**")
+        lr_report = classification_report(
+            y_test, lr_preds, target_names=["Not Churned", "Churned"],
+            output_dict=True,
+        )
+        st.dataframe(
+            pd.DataFrame(lr_report).T.style.format(
+                "{:.4f}", subset=pd.IndexSlice[:, ["precision", "recall", "f1-score"]]
+            ),
+            width="stretch",
+        )
+
+    with report_col2:
+        st.markdown("**Random Forest**")
+        rf_report = classification_report(
+            y_test, rf_preds, target_names=["Not Churned", "Churned"],
+            output_dict=True,
+        )
+        st.dataframe(
+            pd.DataFrame(rf_report).T.style.format(
+                "{:.4f}", subset=pd.IndexSlice[:, ["precision", "recall", "f1-score"]]
+            ),
+            width="stretch",
+        )
+
+    st.divider()
+
+    # ── 5. Feature Importances (unchanged) ─────────────────────────────
     st.subheader("Top 10 Feature Importances (Random Forest)")
     importances = pd.Series(rf.feature_importances_, index=feature_df.columns)
     top10 = importances.nlargest(10).sort_values()
@@ -346,3 +489,4 @@ with tab_ml:
     )
     fig_imp.update_layout(yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig_imp, width="stretch")
+
