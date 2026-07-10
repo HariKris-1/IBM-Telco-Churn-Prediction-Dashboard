@@ -1,4 +1,4 @@
-# Customer Churn Prediction & A/B Testing Dashboard
+# IBM Telco Customer Churn Prediction & A/B Testing Dashboard
 
 An end-to-end data science project that analyses the IBM Telco Customer Churn dataset (~7,000 customers) to understand why customers leave, test potential interventions, and predict churn. The Streamlit dashboard exposes five interactive tabs covering exploratory data analysis, SQL-based insights, statistical hypothesis tests, a simulated A/B retention experiment, and two machine-learning models (Logistic Regression and Random Forest) evaluated with ROC-AUC.
 
