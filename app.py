@@ -697,6 +697,7 @@ with tab_predict:
         st.subheader("💡 Business Recommendations")
 
         if risk_level == "High":
+            recommendation_text = "Offer annual contract, provide loyalty discount, assign retention specialist, contact within 48 hours, bundle services."
             st.error("🔴 **High Risk — Immediate Action Required**")
             st.markdown(
                 """
@@ -708,6 +709,7 @@ with tab_predict:
                 """
             )
         elif risk_level == "Medium":
+            recommendation_text = "Offer promotional bundle, send personalized email, monitor engagement, suggest contract upgrade, schedule check-in call."
             st.warning("🟡 **Medium Risk — Proactive Engagement Recommended**")
             st.markdown(
                 """
@@ -719,6 +721,7 @@ with tab_predict:
                 """
             )
         else:
+            recommendation_text = "Maintain current relationship, recommend premium services, encourage referrals, continue current plan, upsell opportunities."
             st.success("🟢 **Low Risk — Maintain & Grow**")
             st.markdown(
                 """
@@ -729,3 +732,47 @@ with tab_predict:
                 - 🎯 **Upsell opportunities** — suggest relevant upgrades based on usage
                 """
             )
+
+        st.divider()
+
+        # ── Download Prediction Report ─────────────────────────────────
+        st.subheader("📥 Download Report")
+        
+        report_data = {
+            "Gender": gender,
+            "Senior Citizen": senior_citizen,
+            "Partner": partner,
+            "Dependents": dependents,
+            "Tenure (months)": tenure,
+            "Contract": contract,
+            "Paperless Billing": paperless_billing,
+            "Payment Method": payment_method,
+            "Phone Service": phone_service,
+            "Multiple Lines": multiple_lines,
+            "Internet Service": internet_service,
+            "Online Security": online_security,
+            "Online Backup": online_backup,
+            "Device Protection": device_protection,
+            "Tech Support": tech_support,
+            "Streaming TV": streaming_tv,
+            "Streaming Movies": streaming_movies,
+            "Monthly Charges ($)": monthly_charges,
+            "Total Charges ($)": total_charges,
+            "Prediction": "Likely to Churn" if prediction == 1 else "Likely to Stay",
+            "Probability": f"{churn_prob:.2%}",
+            "Risk Level": risk_level,
+            "Recommendation": recommendation_text,
+        }
+        
+        report_df = pd.DataFrame(list(report_data.items()), columns=["Field", "Value"])
+        csv_data = report_df.to_csv(index=False)
+        
+        filename = f"customer_churn_prediction_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        st.download_button(
+            label="📄 Download Prediction Report",
+            data=csv_data,
+            file_name=filename,
+            mime="text/csv",
+            use_container_width=True
+        )
