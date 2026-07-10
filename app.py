@@ -58,8 +58,9 @@ def run_sql(query: str):
 df = load_data()
 
 # ── Tabs ────────────────────────────────────────────────────────────────
-tab_eda, tab_sql, tab_hyp, tab_ab, tab_ml = st.tabs(
-    ["EDA", "SQL Insights", "Hypothesis Tests", "A/B Test", "Churn Model"]
+tab_eda, tab_sql, tab_hyp, tab_ab, tab_ml, tab_predict = st.tabs(
+    ["EDA", "SQL Insights", "Hypothesis Tests", "A/B Test", "Churn Model",
+     "Predict Customer Churn"]
 )
 
 # =====================================================================
@@ -490,3 +491,241 @@ with tab_ml:
     fig_imp.update_layout(yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig_imp, width="stretch")
 
+
+# =====================================================================
+# TAB 6 — Predict Customer Churn
+# =====================================================================
+with tab_predict:
+    st.header("🔮 Predict Customer Churn")
+    st.markdown(
+        "Enter customer information below to predict whether the customer "
+        "is likely to churn."
+    )
+
+    # ── Determine best model based on ROC-AUC from tab_ml ──────────────
+    if lr_metrics["ROC-AUC"] >= rf_metrics["ROC-AUC"]:
+        best_model_name = "Logistic Regression"
+        best_model = lr
+        use_scaling = True
+    else:
+        best_model_name = "Random Forest"
+        best_model = rf
+        use_scaling = False
+
+    st.info(f"Using **{best_model_name}** (best ROC-AUC) for predictions.")
+
+    # ── Input Form ─────────────────────────────────────────────────────
+    with st.form("churn_prediction_form"):
+
+        # --- Demographics -----------------------------------------------
+        st.subheader("👤 Demographics")
+        demo_col1, demo_col2, demo_col3, demo_col4 = st.columns(4)
+        with demo_col1:
+            gender = st.selectbox("Gender", ["Female", "Male"])
+        with demo_col2:
+            senior_citizen = st.radio("Senior Citizen", ["No", "Yes"])
+        with demo_col3:
+            partner = st.selectbox("Partner", ["No", "Yes"])
+        with demo_col4:
+            dependents = st.selectbox("Dependents", ["No", "Yes"])
+
+        st.divider()
+
+        # --- Account Information ----------------------------------------
+        st.subheader("📋 Account Information")
+        acct_col1, acct_col2 = st.columns(2)
+        with acct_col1:
+            tenure = st.slider("Tenure (months)", min_value=1, max_value=72, value=12)
+            contract = st.selectbox(
+                "Contract", ["Month-to-month", "One year", "Two year"]
+            )
+        with acct_col2:
+            paperless_billing = st.selectbox("Paperless Billing", ["No", "Yes"])
+            payment_method = st.selectbox(
+                "Payment Method",
+                [
+                    "Bank transfer (automatic)",
+                    "Credit card (automatic)",
+                    "Electronic check",
+                    "Mailed check",
+                ],
+            )
+
+        st.divider()
+
+        # --- Services ---------------------------------------------------
+        st.subheader("📞 Phone & Internet Services")
+        svc_col1, svc_col2, svc_col3 = st.columns(3)
+        with svc_col1:
+            phone_service = st.selectbox("Phone Service", ["No", "Yes"])
+            multiple_lines = st.selectbox(
+                "Multiple Lines", ["No", "Yes", "No phone service"]
+            )
+        with svc_col2:
+            internet_service = st.selectbox(
+                "Internet Service", ["DSL", "Fiber optic", "No"]
+            )
+            online_security = st.selectbox(
+                "Online Security", ["No", "Yes", "No internet service"]
+            )
+        with svc_col3:
+            online_backup = st.selectbox(
+                "Online Backup", ["No", "Yes", "No internet service"]
+            )
+            device_protection = st.selectbox(
+                "Device Protection", ["No", "Yes", "No internet service"]
+            )
+
+        st.subheader("🎬 Streaming & Support")
+        str_col1, str_col2, str_col3 = st.columns(3)
+        with str_col1:
+            tech_support = st.selectbox(
+                "Tech Support", ["No", "Yes", "No internet service"]
+            )
+        with str_col2:
+            streaming_tv = st.selectbox(
+                "Streaming TV", ["No", "Yes", "No internet service"]
+            )
+        with str_col3:
+            streaming_movies = st.selectbox(
+                "Streaming Movies", ["No", "Yes", "No internet service"]
+            )
+
+        st.divider()
+
+        # --- Charges ----------------------------------------------------
+        st.subheader("💰 Charges")
+        charge_col1, charge_col2 = st.columns(2)
+        with charge_col1:
+            monthly_charges = st.number_input(
+                "Monthly Charges ($)",
+                min_value=18.0, max_value=120.0, value=50.0, step=0.5,
+            )
+        with charge_col2:
+            total_charges = st.number_input(
+                "Total Charges ($)",
+                min_value=0.0, max_value=9000.0, value=600.0, step=10.0,
+            )
+
+        submitted = st.form_submit_button(
+            "🔍 Predict Churn", type="primary", use_container_width=True
+        )
+
+    # ── Run prediction when form is submitted ──────────────────────────
+    if submitted:
+        # Build a single-row DataFrame matching training columns
+        input_dict = {
+            "SeniorCitizen": 1 if senior_citizen == "Yes" else 0,
+            "tenure": tenure,
+            "MonthlyCharges": monthly_charges,
+            "TotalCharges": total_charges,
+            "gender": gender,
+            "Partner": partner,
+            "Dependents": dependents,
+            "PhoneService": phone_service,
+            "MultipleLines": multiple_lines,
+            "InternetService": internet_service,
+            "OnlineSecurity": online_security,
+            "OnlineBackup": online_backup,
+            "DeviceProtection": device_protection,
+            "TechSupport": tech_support,
+            "StreamingTV": streaming_tv,
+            "StreamingMovies": streaming_movies,
+            "Contract": contract,
+            "PaperlessBilling": paperless_billing,
+            "PaymentMethod": payment_method,
+        }
+        input_df = pd.DataFrame([input_dict])
+
+        # Apply the same get_dummies encoding as training
+        input_encoded = pd.get_dummies(input_df, drop_first=True)
+
+        # Align columns to match training feature set (add missing, drop extra)
+        input_encoded = input_encoded.reindex(
+            columns=feature_df.columns, fill_value=0
+        )
+
+        X_input = input_encoded.values
+
+        # Scale if the best model requires it (Logistic Regression)
+        if use_scaling:
+            X_input = scaler.transform(X_input)
+
+        # Predict
+        prediction = best_model.predict(X_input)[0]
+        proba = best_model.predict_proba(X_input)[0]
+        churn_prob = proba[1]
+        stay_prob = proba[0]
+
+        st.divider()
+
+        # ── Display Results ────────────────────────────────────────────
+        st.subheader("📊 Prediction Results")
+
+        res_col1, res_col2 = st.columns(2)
+
+        with res_col1:
+            st.markdown("#### Prediction")
+            if prediction == 1:
+                st.error("⚠️ **Likely to Churn**")
+            else:
+                st.success("✅ **Likely to Stay**")
+
+        with res_col2:
+            st.markdown("#### Churn Probability")
+            st.metric("Churn Probability", f"{churn_prob:.1%}")
+            st.progress(min(churn_prob, 1.0))
+
+        st.divider()
+
+        # ── Risk Classification ────────────────────────────────────────
+        st.subheader("🎯 Risk Classification")
+
+        if churn_prob <= 0.30:
+            risk_level = "Low"
+            st.success(f"🟢 **Low Risk** — Churn probability: {churn_prob:.1%}")
+        elif churn_prob <= 0.70:
+            risk_level = "Medium"
+            st.warning(f"🟡 **Medium Risk** — Churn probability: {churn_prob:.1%}")
+        else:
+            risk_level = "High"
+            st.error(f"🔴 **High Risk** — Churn probability: {churn_prob:.1%}")
+
+        st.divider()
+
+        # ── Business Recommendations ───────────────────────────────────
+        st.subheader("💡 Business Recommendations")
+
+        if risk_level == "High":
+            st.error("🔴 **High Risk — Immediate Action Required**")
+            st.markdown(
+                """
+                - 📝 **Offer an annual contract** with a discounted rate to lock in commitment
+                - 💰 **Provide a loyalty discount** (10–20% off) to incentivize staying
+                - 👤 **Assign a dedicated retention specialist** for personalized outreach
+                - ⏰ **Contact the customer within 48 hours** before they finalize their decision
+                - 🎁 **Bundle complementary services** (e.g., free tech support for 3 months)
+                """
+            )
+        elif risk_level == "Medium":
+            st.warning("🟡 **Medium Risk — Proactive Engagement Recommended**")
+            st.markdown(
+                """
+                - 📦 **Offer a promotional bundle** with added value (streaming, security add-ons)
+                - 📧 **Send a personalized email** highlighting their usage benefits and savings
+                - 📊 **Monitor engagement metrics** closely over the next billing cycle
+                - 🔄 **Suggest a contract upgrade** with a modest discount for longer commitment
+                - 💬 **Schedule a check-in call** to address any service concerns
+                """
+            )
+        else:
+            st.success("🟢 **Low Risk — Maintain & Grow**")
+            st.markdown(
+                """
+                - 🤝 **Maintain the current relationship** — the customer is satisfied
+                - ⭐ **Recommend premium services** (higher-tier plans, add-ons)
+                - 📣 **Encourage referrals** with a referral bonus program
+                - ✅ **Continue the current plan** — no immediate intervention needed
+                - 🎯 **Upsell opportunities** — suggest relevant upgrades based on usage
+                """
+            )
